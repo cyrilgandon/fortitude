@@ -1,7 +1,7 @@
 use crate::options::{
     ExitUnlabelledLoopOptions, InconsistentDimensionOptions, InvalidTabOptions,
     KeywordWhitespaceOptions, LineTooLongOptions, Options, PortabilityOptions, StringOptions,
-    TooComplexOptions, UseStatementsOptions,
+    TooComplexOptions, TooManyParametersOptions, UseStatementsOptions,
 };
 use fortitude_linter::fs::{
     EXCLUDE_BUILTINS, FORTRAN_EXTS, FilePattern, FilePatternSet, GlobPath, INCLUDE,
@@ -221,6 +221,7 @@ pub struct Configuration {
     pub line_too_long: Option<LineTooLongOptions>,
     pub use_statements: Option<UseStatementsOptions>,
     pub too_complex: Option<TooComplexOptions>,
+    pub too_many_parameters: Option<TooManyParametersOptions>,
 }
 
 impl Configuration {
@@ -296,6 +297,7 @@ impl Configuration {
             line_too_long: check.line_too_long,
             use_statements: check.use_statements,
             too_complex: check.too_complex,
+            too_many_parameters: check.too_many_parameters,
         }
     }
 
@@ -382,6 +384,10 @@ impl Configuration {
                     .too_complex
                     .map(TooComplexOptions::into_settings)
                     .unwrap_or_default(),
+                too_many_parameters: self
+                    .too_many_parameters
+                    .map(TooManyParametersOptions::into_settings)
+                    .unwrap_or_default(),
             },
             file_resolver: FileResolverSettings {
                 project_root: project_root.to_path_buf(),
@@ -451,6 +457,7 @@ impl Configuration {
             line_too_long: self.line_too_long.or(config.line_too_long),
             use_statements: self.use_statements.or(config.use_statements),
             too_complex: self.too_complex.or(config.too_complex),
+            too_many_parameters: self.too_many_parameters.or(config.too_many_parameters),
         }
     }
 }

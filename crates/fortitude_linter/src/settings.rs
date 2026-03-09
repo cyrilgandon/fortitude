@@ -22,7 +22,7 @@ use crate::rule_table::RuleTable;
 use crate::rules::AstRuleEnum;
 use crate::rules::correctness::{exit_labels, use_statements};
 use crate::rules::portability::{self, invalid_tab};
-use crate::rules::style::{inconsistent_dimension, keywords, line_length, strings, too_complex};
+use crate::rules::style::{inconsistent_dimension, keywords, line_length, strings, too_complex, too_many_parameters};
 use crate::{ast_entrypoint_map, display_settings};
 
 #[derive(Debug)]
@@ -84,6 +84,7 @@ pub struct CheckSettings {
     pub line_too_long: line_length::settings::Settings,
     pub use_statements: use_statements::settings::Settings,
     pub too_complex: too_complex::settings::Settings,
+    pub too_many_parameters: too_many_parameters::settings::Settings,
 }
 
 impl Default for CheckSettings {
@@ -120,6 +121,7 @@ impl CheckSettings {
             line_too_long: line_length::settings::Settings::default(),
             use_statements: use_statements::settings::Settings::default(),
             too_complex: too_complex::settings::Settings::default(),
+            too_many_parameters: crate::rules::style::too_many_parameters::settings::Settings::default(),
         }
     }
 

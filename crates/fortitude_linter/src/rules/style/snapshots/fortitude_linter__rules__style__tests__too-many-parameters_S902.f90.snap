@@ -1,0 +1,57 @@
+---
+source: crates/fortitude_linter/src/rules/style/mod.rs
+expression: diagnostics
+---
+./resources/test/fixtures/style/S902.f90:14:5: S902 Function/subroutine 'multiline_args' has 6 parameters (threshold: 5)
+   |
+13 |       ! --- Cas 3 : Arguments sur plusieurs lignes ---
+14 | /     function multiline_args(
+15 | |         a,
+16 | |         b,
+17 | |         c,
+18 | |         d,
+19 | |         e,
+20 | |         f)
+   | |___________^ S902
+21 |       end function multiline_args
+22 |
+23 |       ! --- Cas 4 : Juste au seuil ---
+   |
+
+./resources/test/fixtures/style/S902.f90:28:5: S902 Function/subroutine 'above_threshold' has 6 parameters (threshold: 5)
+   |
+27 |     ! --- Cas 5 : Au-dessus du seuil ---
+28 |     subroutine above_threshold(a, b, c, d, e, f)
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ S902
+29 |     end subroutine above_threshold
+30 |
+31 |     ! --- Cas 6 : Subroutine avec beaucoup d'arguments multiline ---
+   |
+
+./resources/test/fixtures/style/S902.f90:32:5: S902 Function/subroutine 'many_args' has 8 parameters (threshold: 5)
+   |
+31 |       ! --- Cas 6 : Subroutine avec beaucoup d'arguments multiline ---
+32 | /     subroutine many_args(
+33 | |         a,
+34 | |         b,
+35 | |         c,
+36 | |         d,
+37 | |         e,
+38 | |         f,
+39 | |         g,
+40 | |         h)
+   | |___________^ S902
+41 |       end subroutine many_args
+42 |
+43 |       ! --- Cas 7 : Fonction avec un seul argument ---
+   |
+
+./resources/test/fixtures/style/S902.f90:48:5: S902 Function/subroutine 'optional_args' has 7 parameters (threshold: 5)
+   |
+47 |     ! --- Cas 8 : Subroutine avec des arguments optionnels ---
+48 |     subroutine optional_args(a, b, c, d, e, f, optional)
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ S902
+49 |     end subroutine optional_args
+50 |
+51 | end module test_too_many_parameters
+   |

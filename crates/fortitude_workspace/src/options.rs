@@ -18,7 +18,7 @@ use fortitude_linter::{
             inconsistent_dimension::{self, settings::PreferAttribute},
             keywords, line_length,
             strings::{self, settings::Quote},
-            too_complex,
+            too_complex, too_many_parameters,
         },
     },
     settings::{FortranStandard, OutputFormat, ProgressBar},
@@ -374,6 +374,8 @@ pub struct CheckOptions {
     /// Options for the `too_complex` rule
     #[option_group]
     pub too_complex: Option<TooComplexOptions>,
+    #[option_group]
+    pub too_many_parameters: Option<TooManyParametersOptions>,
 }
 
 /// Options for the `exit-or-cycle-in-unlabelled-loops` rule
@@ -613,6 +615,23 @@ impl TooComplexOptions {
     pub fn into_settings(self) -> too_complex::settings::Settings {
         too_complex::settings::Settings {
             max_complexity: self.max_complexity.unwrap_or(10usize),
+        }
+    }
+}
+
+#[derive(
+    Clone, Debug, PartialEq, Eq, Default, OptionsMetadata, CombineOptions, Serialize, Deserialize,
+)]
+#[serde(deny_unknown_fields, rename_all = "kebab-case")]
+pub struct TooManyParametersOptions {
+    /// Maximum number of parameters allowed in a function or subroutine (default: 5).
+    #[option(default = "5", value_type = "int", example = "max-parameters = 5")]
+    pub max_parameters: Option<usize>,
+}
+impl TooManyParametersOptions {
+    pub fn into_settings(self) -> too_many_parameters::settings::Settings {
+        too_many_parameters::settings::Settings {
+            max_parameters: self.max_parameters.unwrap_or(5usize),
         }
     }
 }
