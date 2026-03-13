@@ -169,6 +169,17 @@ struct UseStatementData {
     text: String,
     module_name: String,
     is_intrinsic: bool,
+    only_items: Vec<OnlyStatementData>,
+}
+
+#[derive(Clone)]
+struct OnlyStatementData {
+    /// The item name (without "as" alias), normalized to lowercase for sorting.
+    name: String,
+    /// The alias if present (e.g., "alias" from "fun_1 as alias").
+    alias: Option<String>,
+    /// The inline comment associated with this item (e.g., "!! comment").
+    inline_comment: Option<String>,
 }
 
 fn extract_use_statement_data(node: &Node, src: &SourceFile) -> UseStatementData {
@@ -185,6 +196,8 @@ fn extract_use_statement_data(node: &Node, src: &SourceFile) -> UseStatementData
         .children(&mut node.walk())
         .any(|child| child.to_text(src.source_text()) == Some("intrinsic"));
 
+    let only_items = extract_only_items(&text);
+
     UseStatementData {
         text_range: node.textrange(),
         start_position_row: node.start_position().row,
@@ -192,6 +205,7 @@ fn extract_use_statement_data(node: &Node, src: &SourceFile) -> UseStatementData
         text,
         module_name,
         is_intrinsic,
+        only_items,
     }
 }
 
@@ -205,6 +219,139 @@ fn compare_use_statements(a: &UseStatementData, b: &UseStatementData) -> std::cm
     }
 }
 
+fn extract_only_items(text: &str) -> Vec<OnlyStatementData> {
+    if !text.contains("only:") {
+        return Vec::new();
+    }
+    let after = text.split("only:").nth(1).unwrap().trim_start();
+    
+    // Split by newlines and process each line as a potential item
+    let mut items = Vec::new();
+    for line in after.lines() {
+        let line = line.trim();
+        if line.is_empty() {
+            continue;
+        }
+        // Remove trailing comma and continuation if present
+        let line = line.trim_end_matches(", &").trim_end_matches(',').trim();
+        if !line.is_empty() {
+            items.push(extract_name_and_comment(line));
+        }
+    }
+    
+    items
+}
+
+fn extract_name_and_comment(item: &str) -> OnlyStatementData {
+    // Remove continuation markers and normalize whitespace
+    let item_clean = item.replace("&", "");
+    let item = item_clean.trim();
+
+    // Separate out inline comment if present
+    let (raw_item, inline_comment) = if let Some(comment_pos) = item.find("!!") {
+        let name_part = item[..comment_pos].trim();
+        let comment_part = item[comment_pos..].trim();
+        (name_part, Some(comment_part.to_string()))
+    } else {
+        (item, None)
+    };
+
+    // Remove any trailing commas
+    let raw_item = raw_item.trim_end_matches(',').trim();
+
+    // Parse alias if present
+    let (name, alias) = if let Some(as_pos) = raw_item.to_lowercase().find(" as ") {
+        // Keep original casing for alias
+        let (left, right) = raw_item.split_at(as_pos);
+        let alias = right[4..].trim(); // skip " as "
+        (left.trim().to_lowercase(), Some(alias.to_string()))
+    } else {
+        (raw_item.to_lowercase(), None)
+    };
+
+    OnlyStatementData {
+        name,
+        alias,
+        inline_comment,
+    }
+}
+
+fn extract_item_name(item: &OnlyStatementData) -> String {
+    // Already stored as lowercase base name for sorting
+    item.name.clone()
+}
+
+
+#[derive(ViolationMetadata)]
+pub(crate) struct UnsortedOnlys {}
+
+impl AlwaysFixableViolation for UnsortedOnlys {
+    #[derive_message_formats]
+    fn message(&self) -> String {
+        "Items in `only` clause are not sorted".to_string()
+    }
+
+    fn fix_title(&self) -> String {
+        "Sort items in `only` clause".to_string()
+    }
+}
+
+impl AstRule for UnsortedOnlys {
+    fn check(
+        _settings: &CheckSettings,
+        node: &Node,
+        src: &SourceFile,
+        _symbol_table: &SymbolTables,
+    ) -> Option<Vec<Diagnostic>> {
+        let use_stmt = extract_use_statement_data(node, src);
+
+        if !use_stmt.only_items.is_empty() && use_stmt.only_items.len() > 1 {
+            // Sort by name
+            let mut sorted_items = use_stmt.only_items.clone();
+            sorted_items.sort_by(|a, b| extract_item_name(a).cmp(&extract_item_name(b)));
+            
+            // Check if already sorted
+            let is_sorted = use_stmt.only_items.iter()
+                .map(|item| extract_item_name(item))
+                .collect::<Vec<_>>() == sorted_items.iter()
+                .map(|item| extract_item_name(item))
+                .collect::<Vec<_>>();
+            
+            if !is_sorted {
+                // Reconstruct the only clause with sorted items
+                let sorted_texts: Vec<String> = sorted_items.iter()
+                    .map(|item| {
+                        // Rebuild item text using parsed name + alias to ensure alias is preserved
+                        let mut text = item.name.clone();
+                        if let Some(alias) = &item.alias {
+                            text.push_str(" as ");
+                            text.push_str(alias);
+                        }
+                        if let Some(ref comment) = item.inline_comment {
+                            text.push_str(" ");
+                            text.push_str(comment);
+                        }
+                        text
+                    })
+                    .collect();
+                let sorted_only = sorted_texts.join(", ");
+                let before = use_stmt.text.split("only:").nth(0).unwrap();
+                let replacement = format!("{}only: {}", before, sorted_only);
+                let edit = Edit::range_replacement(replacement, use_stmt.text_range);
+                let fix = Fix::safe_edit(edit);
+                let diag = Diagnostic::new(UnsortedOnlys {}, use_stmt.text_range).with_fix(fix);
+                return Some(vec![diag]);
+            }
+        }
+
+        None
+    }
+
+    fn entrypoints() -> Vec<&'static str> {
+        vec!["use_statement"]
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use anyhow::{Context, Result};
@@ -212,7 +359,8 @@ mod tests {
     use tree_sitter::Parser;
 
     use crate::rules::style::use_statement::{
-        UseStatementData, extract_use_statement_data, group_use_statements_into_blocks,
+        UseStatementData, OnlyStatementData, extract_use_statement_data, group_use_statements_into_blocks,
+        extract_item_name,
     };
 
     #[test]
@@ -363,4 +511,171 @@ mod tests {
         assert!(!golf.text_range.is_empty());
         Ok(())
     }
+
+    #[test]
+    fn test_unsorted_onlys_multiline_with_comments() -> Result<()> {
+        let mut parser = Parser::new();
+        parser
+            .set_language(&tree_sitter_fortran::LANGUAGE.into())
+            .context("Error loading Fortran grammar")?;
+
+        let code = r#"
+program test
+  use multiline_module, only: fun_2, & !! fun_2_comments
+                              fun_3, & !! fun_3_comments
+                              fun_1 !! fun_1_comments
+end program test
+"#;
+
+        let tree = parser.parse(code, None).context("Failed to parse")?;
+        let src = SourceFileBuilder::new("test.f90", code).finish();
+
+        let program_node = tree.root_node().child(0).context("Missing program node")?;
+        assert_eq!(program_node.kind(), "program");
+
+        let use_statements: Vec<UseStatementData> = program_node
+            .children(&mut program_node.walk())
+            .filter(|child| child.kind() == "use_statement")
+            .map(|child| extract_use_statement_data(&child, &src))
+            .collect();
+
+        assert_eq!(use_statements.len(), 1);
+        let use_stmt = &use_statements[0];
+        
+        assert_eq!(use_stmt.only_items.len(), 3);
+        assert_eq!(use_stmt.only_items[0].name, "fun_2");
+        assert_eq!(use_stmt.only_items[1].name, "fun_3");
+        assert_eq!(use_stmt.only_items[2].name, "fun_1");
+        
+        // Check that names are extracted correctly for sorting
+        let names: Vec<String> = use_stmt.only_items.iter()
+            .map(|item| extract_item_name(item))
+            .collect();
+        assert_eq!(names, vec!["fun_2", "fun_3", "fun_1"]);
+        
+        // The items should be detected as unsorted
+        let mut items_with_names: Vec<(String, OnlyStatementData)> = use_stmt.only_items.iter()
+            .map(|item| (extract_item_name(item), item.clone()))
+            .collect();
+        items_with_names.sort_by(|a, b| a.0.cmp(&b.0));
+        
+        let sorted_names: Vec<String> = items_with_names.iter()
+            .map(|(name, _): &(String, OnlyStatementData)| name.clone())
+            .collect();
+        assert_eq!(sorted_names, vec!["fun_1", "fun_2", "fun_3"]);
+        
+        // Check the expected fix result
+        let sorted_items: Vec<String> = items_with_names.into_iter()
+            .map(|(_, item)| {
+                let mut text = item.name.clone();
+                if let Some(alias) = &item.alias {
+                    text.push_str(" as ");
+                    text.push_str(alias);
+                }
+                if let Some(ref comment) = item.inline_comment {
+                    text.push_str(" ");
+                    text.push_str(comment);
+                }
+                text
+            })
+            .collect();
+        let sorted_only = sorted_items.join(", ");
+        let before = use_stmt.text.split("only:").nth(0).unwrap();
+        let expected_replacement = format!("{}only: {}", before, sorted_only);
+        
+        // The expected result should contain the items in sorted order
+        assert!(expected_replacement.contains("fun_1"));
+        assert!(expected_replacement.contains("fun_2"));
+        assert!(expected_replacement.contains("fun_3"));
+        assert!(expected_replacement.contains("fun_1_comments"));
+        assert!(expected_replacement.contains("fun_2_comments"));
+        assert!(expected_replacement.contains("fun_3_comments"));
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_extract_name_and_comment() {
+        use crate::rules::style::use_statement::extract_name_and_comment;
+
+        // Test simple item without comment
+        let item = extract_name_and_comment("fun_1");
+        assert_eq!(item.name, "fun_1");
+        assert_eq!(item.alias, None);
+        assert_eq!(item.inline_comment, None);
+
+        // Test item with comment
+        let item = extract_name_and_comment("fun_1 !! comment");
+        assert_eq!(item.name, "fun_1");
+        assert_eq!(item.alias, None);
+        assert_eq!(item.inline_comment, Some("!! comment".to_string()));
+
+        // Test item with continuation marker
+        let item = extract_name_and_comment("fun_1 &");
+        assert_eq!(item.name, "fun_1");
+        assert_eq!(item.alias, None);
+        assert_eq!(item.inline_comment, None);
+
+        // Test item with continuation and comment
+        let item = extract_name_and_comment("fun_1 & !! comment");
+        assert_eq!(item.name, "fun_1");
+        assert_eq!(item.alias, None);
+        assert_eq!(item.inline_comment, Some("!! comment".to_string()));
+
+        // Test item with trailing comma
+        let item = extract_name_and_comment("fun_1,");
+        assert_eq!(item.name, "fun_1");
+        assert_eq!(item.alias, None);
+        assert_eq!(item.inline_comment, None);
+
+        // Test item with trailing comma and comment
+        let item = extract_name_and_comment("fun_1, !! comment");
+        assert_eq!(item.name, "fun_1");
+        assert_eq!(item.alias, None);
+        assert_eq!(item.inline_comment, Some("!! comment".to_string()));
+
+        // Test item with renaming
+        let item = extract_name_and_comment("fun_1 as alias");
+        assert_eq!(item.name, "fun_1");
+        assert_eq!(item.alias, Some("alias".to_string()));
+        assert_eq!(item.inline_comment, None);
+
+        // Test item with renaming and comment
+        let item = extract_name_and_comment("fun_1 as alias !! comment");
+        assert_eq!(item.name, "fun_1");
+        assert_eq!(item.alias, Some("alias".to_string()));
+        assert_eq!(item.inline_comment, Some("!! comment".to_string()));
+
+        // Test complex case with continuation, comma, and comment
+        let item = extract_name_and_comment("fun_1, & !! comment");
+        assert_eq!(item.name, "fun_1");
+        assert_eq!(item.alias, None);
+        assert_eq!(item.inline_comment, Some("!! comment".to_string()));
+
+        // Test empty string
+        let item = extract_name_and_comment("");
+        assert_eq!(item.name, "");
+        assert_eq!(item.alias, None);
+        assert_eq!(item.inline_comment, None);
+
+        // Test only comment
+        let item = extract_name_and_comment("!! comment");
+        assert_eq!(item.name, "");
+        assert_eq!(item.alias, None);
+        assert_eq!(item.inline_comment, Some("!! comment".to_string()));
+
+        // Test whitespace handling
+        let item = extract_name_and_comment("  fun_1  ");
+        assert_eq!(item.name, "fun_1");
+        assert_eq!(item.alias, None);
+        assert_eq!(item.inline_comment, None);
+
+        // Test mixed case (should be lowercased)
+        let item = extract_name_and_comment("Fun_1");
+        assert_eq!(item.name, "fun_1");
+        assert_eq!(item.alias, None);
+        assert_eq!(item.inline_comment, None);
+    }
 }
+
+

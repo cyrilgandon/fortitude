@@ -5,60 +5,60 @@ expression: content
 [
   {
     "code": "S201",
-    "message": "'implicit none' set on the enclosing module",
+    "end_location": {
+      "column": 18,
+      "row": 6
+    },
+    "filename": "test.f90",
     "fix": {
       "applicability": "unsafe",
-      "message": "Remove unnecessary 'implicit none'",
       "edits": [
         {
           "content": "",
-          "location": {
-            "row": 6,
-            "column": 5
-          },
           "end_location": {
-            "row": 6,
-            "column": 18
+            "column": 18,
+            "row": 6
+          },
+          "location": {
+            "column": 5,
+            "row": 6
           }
         }
-      ]
+      ],
+      "message": "Remove unnecessary 'implicit none'"
     },
     "location": {
-      "row": 6,
-      "column": 5
+      "column": 5,
+      "row": 6
     },
-    "end_location": {
-      "row": 6,
-      "column": 18
-    },
-    "filename": "test.f90"
+    "message": "'implicit none' set on the enclosing module"
   },
   {
     "code": "S061",
-    "message": "end statement should read 'end subroutine foo'",
+    "end_location": {
+      "column": 17,
+      "row": 7
+    },
+    "filename": "test.f90",
     "fix": null,
     "location": {
-      "row": 7,
-      "column": 3
+      "column": 3,
+      "row": 7
     },
-    "end_location": {
-      "row": 7,
-      "column": 17
-    },
-    "filename": "test.f90"
+    "message": "end statement should read 'end subroutine foo'"
   },
   {
     "code": "PORT021",
-    "message": "integer*4 is non-standard, use integer(4)",
+    "end_location": {
+      "column": 9,
+      "row": 1
+    },
+    "filename": "star_kind.f90",
     "fix": null,
     "location": {
-      "row": 1,
-      "column": 8
+      "column": 8,
+      "row": 1
     },
-    "end_location": {
-      "row": 1,
-      "column": 9
-    },
-    "filename": "star_kind.f90"
+    "message": "integer*4 is non-standard, use integer(4)"
   }
 ]
